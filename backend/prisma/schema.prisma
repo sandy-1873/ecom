@@ -14,7 +14,7 @@ datasource db {
 }
 
 model User {
-  id          Int      @id @default(autoincrement())
+  id          String   @id @default(uuid())
   email       String   @unique
   firstname   String
   lastname    String
@@ -29,7 +29,7 @@ model User {
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
+  id          String   @id @default(uuid())
   name        String
   sku         String   @unique
   description String?
@@ -39,8 +39,8 @@ model Product {
 }
 
 model Cart {
-  id        Int      @id @default(autoincrement())
-  userId    Int
+  id        String   @id @default(uuid())
+  userId    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -49,8 +49,8 @@ model Cart {
 }
 
 model CartItem {
-  id       Int    @id @default(autoincrement())
-  cartId   Int
+  id       String @id @default(uuid())
+  cartId   String
   sku      String
   quantity Int    @default(1)
 
@@ -58,8 +58,8 @@ model CartItem {
 }
 
 model AddressBook {
-  id        Int     @id @default(autoincrement())
-  userId    Int
+  id        String  @id @default(uuid())
+  userId    String
   street    String
   city      String
   state     String
@@ -71,8 +71,8 @@ model AddressBook {
 }
 
 model Order {
-  id          Int      @id @default(autoincrement())
-  userId      Int
+  id          String   @id @default(uuid())
+  userId      String
   totalAmount Float
   createdAt   DateTime @default(now())
   status      String   @default("PENDING")
@@ -82,8 +82,8 @@ model Order {
 }
 
 model OrderItem {
-  id       Int    @id @default(autoincrement())
-  orderId  Int
+  id       String @id @default(uuid())
+  orderId  String
   sku      String
   quantity Int
   price    Float
