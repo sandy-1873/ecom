@@ -1,16 +1,14 @@
-import express, { Request, Response } from "express";
+import express, {Request, Response} from "express";
 import userTokenValidator from "../middlewares/auth";
 import userSchema from "../types/userSchema";
-import { z } from "zod";
-import { prisma } from "../lib/prisma";
+import {z} from "zod";
+import {prisma} from "../lib/prisma";
 import bcrypt from "bcryptjs";
 import jwt, {JwtPayload} from "jsonwebtoken";
 import "dotenv/config";
-const userRoutes = express();
+import {validateUserAccess} from "../lib/validateUserAccess";
 
-interface AuthPayload extends JwtPayload {
-    email: string;
-}
+const userRoutes = express();
 
 userRoutes.post("/register", async (req: Request, res: Response) => {
     const data = req.body;
@@ -36,7 +34,7 @@ userRoutes.post("/register", async (req: Request, res: Response) => {
                 phonenumber: data.phonenumber,
             }
         });
-        const { password: _, ...returnableUser } = user;
+        const {password: _, ...returnableUser} = user;
 
         return res.status(200).json({
             user: returnableUser,
@@ -50,7 +48,7 @@ userRoutes.post("/register", async (req: Request, res: Response) => {
 });
 
 userRoutes.post("/login", async (req, res) => {
-    const { email, password } = req.body;
+    const {email, password} = req.body;
 
     if (!email || !password) {
         return res.status(400).json({
@@ -74,8 +72,8 @@ userRoutes.post("/login", async (req, res) => {
             message: "Invalid credentials",
         })
     }
-    const refreshToken = jwt.sign({ email }, process.env.REFRESH_TOKEN_SECRET!, { expiresIn: '1d' });
-    const token = jwt.sign({ email }, process.env.JWT_SECRET!, {
+    const refreshToken = jwt.sign({email}, process.env.REFRESH_TOKEN_SECRET!, {expiresIn: '1d'});
+    const token = jwt.sign({email}, process.env.JWT_SECRET!, {
         expiresIn: '2h'
     });
     res.cookie('refresh', refreshToken, {
@@ -88,86 +86,81 @@ userRoutes.post("/login", async (req, res) => {
     })
 });
 
-userRoutes.get("/:id", userTokenValidator, (req, res) => {
-    const userId = req.params.id;
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
-    if (!token) {
-        return res.status(401).json({
-            message: "Invalid token",
-        })
+userRoutes.get("/:id", userTokenValidator, async (req, res) => {
+    try {
+        const user = await validateUserAccess(req);
+
+        const {password: _, ...returnableUser} = user;
+
+        res.status(200).json({
+            message: "User fetched successfully",
+            user: returnableUser,
+        });
+    } catch (err: any) {
+        res.status(err.status || 500).json({
+            message: err.message || "Something went wrong",
+        });
     }
-    const jwtDecoded = jwt.decode(token);
-    console.log(jwtDecoded);
-    res.send(`Get user with ID ${req.params.id}`);
 });
 
 userRoutes.patch("/:id", userTokenValidator, async (req, res) => {
-    const userId = req.params.id;
+    try {
+        await validateUserAccess(req);
 
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ")
-        ? authHeader.split(" ")[1]
-        : authHeader;
+        const {userEmail, password, firstname, lastname, phonenumber} = req.body;
 
-    if (!token) {
-        return res.status(401).json({ message: "Invalid token" });
-    }
+        const updateData: any = {};
 
-    const decoded = jwt.verify(
-        token,
-        process.env.JWT_SECRET as string
-    ) as AuthPayload;
+        if (firstname !== undefined) updateData.firstname = firstname;
+        if (lastname !== undefined) updateData.lastname = lastname;
+        if (phonenumber !== undefined) updateData.phonenumber = phonenumber;
+        if (userEmail !== undefined) updateData.email = userEmail;
 
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-    });
+        if (password !== undefined) {
+            const salt = await bcrypt.genSalt(10);
+            updateData.password = await bcrypt.hash(password, salt);
+        }
 
-    if (!user) {
-        return res.status(401).json({ message: "User does not exist" });
-    }
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({
+                message: "No fields provided to update",
+            });
+        }
 
-    if (user.email !== decoded.email) {
-        return res.status(401).json({ message: "Invalid user" });
-    }
+        const updatedUser = await prisma.user.update({
+            where: {id: req.params.id},
+            data: updateData,
+        });
 
-    const { userEmail, password, firstname, lastname, phonenumber } = req.body;
+        const {password: _, ...returnableUser} = updatedUser;
 
-    // 👇 build update object dynamically
-    const updateData: any = {};
-
-    if (firstname !== undefined) updateData.firstname = firstname;
-    if (lastname !== undefined) updateData.lastname = lastname;
-    if (phonenumber !== undefined) updateData.phonenumber = phonenumber;
-    if (userEmail !== undefined) updateData.email = userEmail;
-
-    if (password !== undefined) {
-        const salt = await bcrypt.genSalt(10);
-        updateData.password = await bcrypt.hash(password, salt);
-    }
-
-    // Optional: prevent empty updates
-    if (Object.keys(updateData).length === 0) {
-        return res.status(400).json({
-            message: "No fields provided to update",
+        res.status(200).json({
+            message: "User updated successfully",
+            user: returnableUser,
+        });
+    } catch (err: any) {
+        res.status(err.status || 500).json({
+            message: err.message || "Something went wrong",
         });
     }
-
-    const updatedUser = await prisma.user.update({
-        where: { id: userId },
-        data: updateData,
-    });
-
-    const { password: _, ...returnableUser } = updatedUser;
-
-    res.status(200).json({
-        message: "User updated successfully",
-        user: returnableUser,
-    });
 });
 
-userRoutes.delete("/:id", userTokenValidator, (req, res) => {
-    res.send(`Delete user with ID ${req.params.id}`);
+userRoutes.delete("/:id", userTokenValidator, async (req, res) => {
+    try {
+        await validateUserAccess(req);
+
+        await prisma.user.delete({
+            where: {id: req.params.id},
+        });
+
+        res.status(200).json({
+            message: "User deleted successfully",
+        });
+    } catch (err: any) {
+        res.status(err.status || 500).json({
+            message: err.message || "Something went wrong",
+        });
+    }
 });
 
 export default userRoutes;
